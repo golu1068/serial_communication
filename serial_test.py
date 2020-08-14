@@ -1,3 +1,4 @@
+__spec__ = "ModuleSpec(name='builtins', loader=<class '_frozen_importlib.BuiltinImporter'>)"
 ## google cloud console
 import serial
 import tkinter as tk 
@@ -7,73 +8,210 @@ from time import sleep
 import threading
 from functools import partial
 from pkg import Initialization, tx_power, load_time, get_cmd, reset_cmd, factory_reset_cmd, data_rate
+from pkg import acknowledgment, cmd_write
 from tkinter import *
+import timeit
+from itertools import count
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 #################################################################################
-
+data_size=0;aa=1;end=-1;pkg='';measurement_data=[];vel_out=0;range_out=0;snr_out=0;measurement_count=0;
+ser_count=0;ser='fjhk';pause=0;
+path = r'E:\Uart_data.txt'
+file = open(path, 'w+')
+############################################################################
+       
 def defocus(event):
     event.widget.master.focus_set()
 #    event.widget.master.state = 'normal'
 #    Port_name.takefocus = False
 #    Port_name.state('readonly')
-#b'\xe0\x07\x11\x81\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x80'
-aa=1;
+def close(master):
+    global end
+    if (end == -1):
+        file.close()
+        master.destroy()
+        return
+    else:
+        end=0
+    while 1:
+        if (end == 1):
+            ser.close()
+            file.close()
+            master.destroy()
+            break
+
+def quit_btn(ser, master):
+    global end
+    if (end == -1):
+        file.close()
+        master.destroy()
+        return
+    while 1:
+        if (end == 1):
+            ser.close()
+            file.close()
+            master.destroy()
+            break
+
 def go_to_sub(ser, text_out, pkg):
-    global aa
+    global aa, end
     ser.reset_input_buffer()
     ser.reset_output_buffer()
-
 #    ser.write(bytes('7e0080401010000', encoding='ascii')) 
-    ser.write(bytes.fromhex(pkg))
+    while 1:
+        ser.write(bytes.fromhex('55'))
+        if (end == 0):
+            ser.close()
+            break
+        break
+#    return
 
     while True:
-        data = ser.read(size=9999)
+        data = ser.read(size=17)
         if len(data) > 0:
-            print(len(data))
-            print ('Got:', data)
+            print('len= ', len(data))
+            print ('Got:', data.hex())
             break
-        
-        if (aa==0):
-            break
-        
-    data_hex =data.hex()
-    pkg = get_cmd(data_hex) 
-    
-    text_out.config(state=NORMAL)
-    text_out.insert(INSERT,pkg[0])
-    text_out.insert(INSERT,'\n')
-    text_out.insert(INSERT,pkg[1])
-    text_out.config(state=DISABLED)
-        
-    ser.close()
 
-def defocus(event):
-    event.widget.master.focus_set()
-#    event.widget.master.state = 'normal'
-#    Port_name.takefocus = False
-#    Port_name.state('readonly')
+    if (len(data) == 17):
+        pkg = cmd_write(data) 
+        text_out.config(state=NORMAL)
+        text_out.delete(1.0, END)
+        text_out.insert(INSERT,pkg[0])
+        text_out.insert(INSERT,'\n')
+        text_out.insert(INSERT,pkg[1])
+        text_out.config(state=DISABLED)
+    elif (len(data) == 9):
+        pkg = acknowledgment(data)
+        text_out.config(state=NORMAL)
+        text_out.delete(1.0, END)
+        text_out.insert(INSERT,pkg)
+        text_out.config(state=DISABLED)
+    else:
+        pass
     
+    return
+    
+def go_to_start(ser,text_out,l5,):
+    global end, line1, figure, x_values, y_values, ax, data_size, snr_out, range_out,vel_out, measurement_count  
+    while 1:
+        if (end == 0):
+            end=1
+            break
+        data1 = ser.read(size=2)
+#        print(data1)
+        print(data1.hex())
+        if (data1.hex() != 'e007'):
+            continue
+        else:
+            data = ser.read(size=15)
+#        starttime = timeit.default_timer()
+        if len(data) > 0:
+#            print('len= ', len(data))
+            data = data1 + data
+            print ('Got:', data.hex())
+#            print(data)
+#            pkg = cmd_write(data) 
+            ##############################################
+            data_hex =data.hex()
+            velocity = data_hex[10:14]
+            r = bytearray.fromhex(velocity)
+            vel_out = int.from_bytes(r, byteorder='little')
+            
+            range_out = data_hex[14:18]
+            r = bytearray.fromhex(range_out)
+            range_out = int.from_bytes(r, byteorder='little')
+            
+            snr_out = data_hex[18:22]
+            r = bytearray.fromhex(snr_out)
+            snr_out = int.from_bytes(r, byteorder='little')
+            #################################################
+            
+            
+#            text_out.config(state=NORMAL)
+#            text_out.delete(1.0, END)
+#            text_out.insert(INSERT,f'{vel_out} m/s\n{range_out} m\n{snr_out} dbm')
+#            text_out.config(state=DISABLED) 
+            
+#            file.write(f'{data.hex()}       {vel_out}\n')
+            
+#            with open(path, 'a+') as file:
+#                file.write(f'{vel_out}\n')
+            file.write(f'{vel_out}\n')
+            
+            data_size += len(data)
+            l5.config(text=str(data_size))
+            
+        data=b''
+#        print(timeit.default_timer() - starttime)
+    return 
+        
 def go_to_Initialization(Port_name, e1, e2, text_out, *args):
+    global end,ser_count, ser,pause
     port_name = Port_name.get()
     bdrate = e1.get()
     bytesize = e2.get()
     port_name_li = port_name.split()
-#    ser = serial.Serial(port=port_name_li[0], baudrate=bdrate, bytesize=int(bytesize), 
-#                        stopbits=1)
-#    if (ser.isOpen() == True):
-    if (args[0] == 'init'):
-        pkg = Initialization()
-    elif (args[0] == 'tx_power'):
-        pkg = tx_power()
-    elif (args[0] == 'ld_time'):
-        pkg = load_time()
-    elif (args[0] == 'get_cmd'):
-        pkg = get_cmd('read')
-    elif (args[0] == 'reset'):
-        pkg = reset_cmd()
-    elif (args[0] == 'fact_res'):
-        pkg = factory_reset_cmd()
-    elif (args[0] == 'data_rate'):
-        pkg = data_rate()
+    
+    try:
+        print(args[1].cget('text'))
+        print(ser.isOpen())
+    except:
+        print(args[0])
+        
+    ### Below try is to igmore error for command button
+    try:
+        if (args[1].cget('text') == 'Start'):
+            if (ser_count == 0):
+                print('done')
+                ser = serial.Serial(port=port_name_li[0], baudrate=bdrate, bytesize=int(bytesize), stopbits=1,timeout=1)
+                ser.reset_input_buffer()
+                ser.reset_output_buffer()
+                ser_count = 1
+            elif (ser.isOpen() == False):
+                ser = serial.Serial(port=port_name_li[0], baudrate=bdrate, bytesize=int(bytesize), stopbits=1,timeout=1)
+                ser.reset_input_buffer()
+                ser.reset_output_buffer()
+            print(ser)
+            args[1].configure(text='Pause', background="light green")
+            end=2
+            t2 = threading.Thread(target=go_to_start, args=(ser,text_out, args[2]))            
+            t2.start()
+            return
+        elif (args[1].cget('text') == 'Pause'):
+            end=0
+            pause = 1
+            args[1].configure(text='Start', background="light sea green")
+            return
+        elif (args[1].cget('text') == 'Quit'):
+            if (ser_count == 0):
+                end = -1
+            elif (pause == 1):
+               end = 1 
+            else:
+                end = 0
+            quit_btn(ser, args[2])
+            return 
+    except:
+        pass
+    
+    if (ser.isOpen() == True):
+        if (args[0] == 'init'):
+            pkg = Initialization()
+        elif (args[0] == 'tx_power'):
+            pkg = tx_power()
+        elif (args[0] == 'ld_time'):
+            pkg = load_time('read')
+        elif (args[0] == 'get_cmd'):
+            pkg = get_cmd('read')
+        elif (args[0] == 'reset'):
+            pkg = reset_cmd('read')
+        elif (args[0] == 'fact_res'):
+            pkg = factory_reset_cmd('read')
+        elif (args[0] == 'data_rate'):
+            pkg = data_rate('read')
     print(str(int(len(pkg)/2))+ 'B')
     print(pkg)
     text_out.config(state=NORMAL)
@@ -81,15 +219,11 @@ def go_to_Initialization(Port_name, e1, e2, text_out, *args):
 #    text_out.insert(INSERT,pkg)
     text_out.config(state=DISABLED)
     
-#    t1 = threading.Thread(target=go_to_sub, args=(ser,text_out,pkg,))
-#    t1.start()
+    if (pkg != ''):            
+        t1 = threading.Thread(target=go_to_sub, args=(ser,text_out,pkg,))
+        t1.start()
     
-    
-def quit_btn(master):
-    global aa
-    aa=0;
-    if (aa==0):
-        master.destroy()
+ 
 class make_gui():
     def __init__(self, **kwargs):
         super(make_gui, self).__init__(**kwargs)
@@ -101,7 +235,7 @@ class make_gui():
         port_list = tuple(port_list)
         #############################################################
         master = tk.Tk() 
-        master.geometry('655x450+400+200')
+        master.geometry('650x450+250+200')
         master.resizable(0, 0)
         master.title('On Board Computer Stimulator')
         master.iconbitmap(r'E:\spyder_code\New_folder\multipath_test\favicon.ico')
@@ -109,6 +243,8 @@ class make_gui():
         
         bg_color = 'light Blue'
         
+        
+        master.protocol("WM_DELETE_WINDOW", partial(close, master))
         
         master_frame = Frame(master, bg='white', width = 640, height=240, bd=1, relief=RIDGE)
         master_frame.grid(row=0, column=0, sticky=N, padx=5, pady=20)
@@ -122,7 +258,7 @@ class make_gui():
                 font = ("Times New Roman", 12), background='white')
         self.l11.grid(row = 0, column = 0)
         
-        frame1 = Frame(master_frame, width=300, bd=3, relief=RIDGE, height=140, bg='light blue')
+        frame1 = Frame(master_frame, width=300, bd=3, relief=RIDGE, height=170, bg='light blue')
         frame1.grid(row=0, column=0, padx=10, pady=26, sticky=N)
         frame1.grid_propagate(False) 
         
@@ -154,7 +290,7 @@ class make_gui():
 #        print(text.get("1.0", "end-2c"))
         self.text.grid(row=1, column=0, padx=0)
 #        self.text.bind("<Key>", lambda a: "break")
-        self.text.config(state=DISABLED)
+#        self.text.config(state=DISABLED)
         
 
         self.l1 = ttk.Label(frame1, text = "Baud Rate :",
@@ -162,7 +298,7 @@ class make_gui():
         self.l1.grid(row = 10, column = 0,  padx = 0, pady = 5)
         
         self.e1 = ttk.Entry(frame1, width = 30, foreground='Grey')
-        self.e1.insert(10, '9600')
+        self.e1.insert(10, '921600')
         self.e1.grid(row= 10, column=1)
         
         self.err_msg = ttk.Label(frame1, font = ("Times New Roman", 10), foreground='red')
@@ -180,7 +316,7 @@ class make_gui():
         self.Port_name.set('Select Port name')
         self.Port_name['values'] = port_list
         self.Port_name.bind("<FocusIn>", defocus)
-        self.Port_name.current(0)
+        self.Port_name.current(1)
         self.Port_name.grid(row = 20, column = 1) 
         
         self.l3 = ttk.Label(frame1, text = "Byte Size  :",
@@ -191,33 +327,45 @@ class make_gui():
         self.e2.insert(10, '8')
         self.e2.grid(row=30, column=1)
         
+        self.l4 = ttk.Label(frame1, text = "Bytes Transfered :",
+                font = ("Times New Roman", 10), background=bg_color)
+        self.l4.grid(row = 40, column = 0,  padx = 0, pady = 5)
+        
+        self.l5 = ttk.Label(frame1, text = "0",
+                font = ("Times New Roman", 10), background=bg_color)
+        self.l5.grid(row = 40, column = 1,  padx = 0, pady = 5 ,sticky=E)
         
          ######################################################################
         self.b2 = tk.Button(frame2, text='Initialization', command=partial(go_to_Initialization, self.Port_name, 
                                                                            self.e1, self.e2, self.text, 'init'),
                             background="light sea green", width=10)
         self.b2.grid(row=40, column=0, sticky =W, pady=10, padx=8)
+        
         self.b3 = tk.Button(frame2, text='Tx_power', command=partial(go_to_Initialization, self.Port_name, 
                                                                      self.e1, self.e2, self.text, 'tx_power'),
                             background="light sea green", width=10)
         self.b3.grid(row=40, column=1, pady=10,padx=8)
+        
         self.b4 = tk.Button(frame2, text='Load_time', command=partial(go_to_Initialization, self.Port_name, 
                                                                       self.e1, self.e2, self.text, 'ld_time'),
                             background="light sea green", width=10)
         self.b4.grid(row=40, column=2, sticky =W, pady=10, padx=8)
-        ######
+  
         self.b5 = tk.Button(frame2, text='Get_cmd', command=partial(go_to_Initialization, self.Port_name, 
                                                                     self.e1, self.e2, self.text, 'get_cmd'),
                             background="light sea green", width=10)
         self.b5.grid(row=41, column=0, sticky =W, pady=10, padx=8)
+        
         self.b6 = tk.Button(frame2, text='Reset', command=partial(go_to_Initialization, self.Port_name, 
                                                                   self.e1, self.e2, self.text, 'reset'),
                             background="light sea green", width=10)
         self.b6.grid(row=41, column=1, pady=10)
+        
         self.b7 = tk.Button(frame2, text='Factory_reset', command=partial(go_to_Initialization, 
                                                                           self.Port_name, self.e1, self.e2, self.text, 'fact_res'),
                             background="light sea green", width=10)
         self.b7.grid(row=41, column=2, sticky =W, pady=10, padx=8)
+        
         
         self.b8 = tk.Button(frame2, text='Data_rate', command=partial(go_to_Initialization, 
                                                                       self.Port_name, self.e1, self.e2, self.text, 'data_rate'),
@@ -225,8 +373,21 @@ class make_gui():
         self.b8.grid(row=42, column=1, pady=10)
         
         #####################################################################
-        self.b1 = tk.Button(frame1, text='Quit', command=partial(quit_btn, master), width=10, background="red")
+        
+        
+        self.b9 = tk.Button(frame1, text='Start',  width=10, background="light sea green")
+        self.b9.grid(row=60, column=1,pady=15, padx=10)
+        self.b9.configure(command=partial(go_to_Initialization, self.Port_name, 
+                                                                  self.e1, self.e2, self.text, self.b9.cget('text'), self.b9, self.l5))
+        
+
+        self.b1 = tk.Button(frame1, text='Quit',  width=10, background="red")
         self.b1.grid(row=60, column=0,pady=15, padx=10)
+        self.b1.configure(command=partial(go_to_Initialization, self.Port_name, 
+                                                                  self.e1, self.e2, self.text, self.b1.cget('text'), self.b1, master))
+        
+        
+        
         
         master.mainloop()
     
