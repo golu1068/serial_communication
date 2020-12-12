@@ -15,11 +15,14 @@ from itertools import count
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import numpy as np
+import time
 #################################################################################
 data_size=0;aa=1;end=-1;pkg='';measurement_data=[];vel_out=0;range_out=0;snr_out=0;measurement_count=0;
 ser_count=0;ser='fjhk';pause=0;
 path = r'E:\Uart_data.txt'
 file = open(path, 'w+')
+file.close()
 ############################################################################
        
 def defocus(event):
@@ -30,7 +33,7 @@ def defocus(event):
 def close(master):
     global end
     if (end == -1):
-        file.close()
+#        file.close()
         master.destroy()
         return
     else:
@@ -38,22 +41,27 @@ def close(master):
     while 1:
         if (end == 1):
             ser.close()
-            file.close()
+#            file.close()
             master.destroy()
             break
 
 def quit_btn(ser, master):
     global end
     if (end == -1):
-        file.close()
+#        file.close()
         master.destroy()
         return
+#    else:
+#        end=0
     while 1:
         if (end == 1):
             ser.close()
-            file.close()
+#            file.close()
+            print('quit all')
             master.destroy()
             break
+    
+    return
 
 def go_to_sub(ser, text_out, pkg):
     global aa, end
@@ -93,8 +101,112 @@ def go_to_sub(ser, text_out, pkg):
         pass
     
     return
+
+def send_tx_data(ser, data):
+    for i in range(0,5,2):
+        d = data[i:i+2]
+        ser.write(d.encode())
+#        ser.write(bytes.fromhex('fe'))
+
+def go_to_test(e_test, id):
+    data = int(e_test.get())
+    data = '%05d'%data
+    data = str(id) + data
+    t3 = threading.Thread(target=send_tx_data, args=(ser, data))           
+    t3.start()
+    t3.join()
+
+
+def up_down(e_test, side, b_test, amount):
+    data = int(e_test.get())
+    chng = int(amount.get())
+    if (side == 11):
+        data = data + chng
+        e_test.delete(0,END) 
+        e_test.insert(10, data)
+    else:
+        data = data - chng
+        e_test.delete(0,END) 
+        e_test.insert(10, data)
+    b_test.invoke()
     
-def go_to_start(ser,text_out,l5,):
+def twoscompliment(data):
+    out = hex((int('FFFFFFFF', 16) - int(data, 16)) + 1)
+#    out = int(out, 16)
+    return out
+
+def go_to_start(ser,text_out,l5, ):
+    global end, line1, figure, x_values, y_values, ax, data_size, snr_out, range_out,vel_out, measurement_count, master 
+    while 1:
+        if (end == 0):
+            ser.close()
+            end=1
+            return
+        data = ser.read(size=17)
+#        print(len(data))
+        if len(data) > 0:
+            id_hex =data.hex()[0:2]
+            r = bytearray.fromhex(id_hex)
+            id_out = int.from_bytes(r, byteorder='little')
+            #################################################
+            d_hex = data.hex()[2:10]
+            r = bytearray.fromhex(d_hex)
+            d_out = int.from_bytes(r, byteorder='little')
+            #################################################
+            mena_i_hex =data.hex()[10:18]
+            
+            if (int(mena_i_hex[-1], 16) > 7):
+                r = bytearray.fromhex(mena_i_hex)
+                mean_i_out = int.from_bytes(r, byteorder='little')
+                mean_i_out = -(2**32  - mean_i_out)
+            else:
+                r = bytearray.fromhex(mena_i_hex)
+                mean_i_out = int.from_bytes(r, byteorder='little')
+            #################################################
+            mena_q_hex =data.hex()[18:26]
+            
+            if (int(mena_q_hex[-1], 16) > 7):
+                r = bytearray.fromhex(mena_q_hex)
+                mean_q_out = int.from_bytes(r, byteorder='little')
+                mean_q_out = -(2**32  - mean_q_out)
+            else:
+                r = bytearray.fromhex(mena_q_hex)
+                mean_q_out = int.from_bytes(r, byteorder='little')
+            #################################################
+            error_hex =data.hex()[26:34]
+            
+            if (int(error_hex[-1], 16) > 7):
+                r = bytearray.fromhex(error_hex)
+                error_out = int.from_bytes(r, byteorder='little')
+                error_out = -(2**32  - error_out)
+                error_out = error_out/10e4
+            else:
+                r = bytearray.fromhex(error_hex)
+                error_out = int.from_bytes(r, byteorder='little')
+                error_out = error_out/10e4
+            #################################################
+            result = np.sqrt(mean_i_out*mean_i_out  +  mean_q_out*mean_q_out)
+            #####################################################
+            file = open(path, 'a+')
+            file.write('%d, %7d, %15d, %15d, %15.5f, %15.7f'%(id_out, d_out, mean_i_out, mean_q_out, result, error_out))
+#            file.write(f'{id_out:1d, d_out:5d, mean_i_out:0.5f, mean_q_out:0.5f, result:0.5f}'[1:-1])
+            file.write('\n\n')
+            data_size += 1##len(data)
+            l5.config(text=str(data_size))
+            
+            text_out.config(state=NORMAL)
+            text_out.delete(1.0, END)
+            text_out.insert(INSERT,id_out)
+            text_out.insert(INSERT,'\n')
+            text_out.insert(INSERT,d_out)
+            text_out.config(state=DISABLED)
+            
+            file.close()
+        
+        data=b''
+
+
+def go_to_star(ser,text_out,l5,):
     global end, line1, figure, x_values, y_values, ax, data_size, snr_out, range_out,vel_out, measurement_count  
     while 1:
         if (end == 0):
@@ -146,6 +258,8 @@ def go_to_start(ser,text_out,l5,):
             
         data=b''
 #        print(timeit.default_timer() - starttime)
+    
+    
     return 
         
 def go_to_Initialization(Port_name, e1, e2, text_out, *args):
@@ -154,6 +268,7 @@ def go_to_Initialization(Port_name, e1, e2, text_out, *args):
     bdrate = e1.get()
     bytesize = e2.get()
     port_name_li = port_name.split()
+#    mas = args[2]
     
     try:
         print(args[1].cget('text'))
@@ -171,13 +286,15 @@ def go_to_Initialization(Port_name, e1, e2, text_out, *args):
                 ser.reset_output_buffer()
                 ser_count = 1
             elif (ser.isOpen() == False):
+                print('flasre')
                 ser = serial.Serial(port=port_name_li[0], baudrate=bdrate, bytesize=int(bytesize), stopbits=1,timeout=1)
                 ser.reset_input_buffer()
                 ser.reset_output_buffer()
             print(ser)
             args[1].configure(text='Pause', background="light green")
             end=2
-            t2 = threading.Thread(target=go_to_start, args=(ser,text_out, args[2]))            
+            pause = 0
+            t2 = threading.Thread(target=go_to_start, args=(ser,text_out,  args[2]))            
             t2.start()
             return
         elif (args[1].cget('text') == 'Pause'):
@@ -188,11 +305,15 @@ def go_to_Initialization(Port_name, e1, e2, text_out, *args):
         elif (args[1].cget('text') == 'Quit'):
             if (ser_count == 0):
                 end = -1
+                quit_btn(ser, args[2])
             elif (pause == 1):
-               end = 1 
+               end = 1
+               quit_btn(ser, args[2])
             else:
                 end = 0
-            quit_btn(ser, args[2])
+                t_quit = threading.Thread(target=quit_btn, args=(ser,args[2],))
+                t_quit.start()
+#            quit_btn(ser, args[2])
             return 
     except:
         pass
@@ -235,7 +356,8 @@ class make_gui():
         port_list = tuple(port_list)
         #############################################################
         master = tk.Tk() 
-        master.geometry('650x450+250+200')
+#        master.geometry('650x450+250+200')
+        master.geometry('650x700+300+20')
         master.resizable(0, 0)
         master.title('On Board Computer Stimulator')
         master.iconbitmap(r'E:\spyder_code\New_folder\multipath_test\favicon.ico')
@@ -297,9 +419,18 @@ class make_gui():
                 font = ("Times New Roman", 10), background=bg_color)
         self.l1.grid(row = 10, column = 0,  padx = 0, pady = 5)
         
-        self.e1 = ttk.Entry(frame1, width = 30, foreground='Grey')
-        self.e1.insert(10, '921600')
-        self.e1.grid(row= 10, column=1)
+        Baud_list = [100,300,600,1200,2400,4800,9600,14400,19200,38400,57600,115200,230400,460800,921600]
+        Baud_list = tuple(Baud_list)
+        n1 = tk.StringVar() 
+        self.e1 = ttk.Combobox(frame1, width = 27, textvariable = n1, foreground='Grey', state='readonly')
+        self.e1.set('Select Baud Rate')
+        self.e1['values'] = Baud_list
+        self.e1.bind("<FocusIn>", defocus)
+        self.e1.current(14)
+        self.e1.grid(row = 10, column = 1) 
+#        self.e1 = ttk.Entry(frame1, width = 30, foreground='Grey')
+#        self.e1.insert(10, '921600')
+#        self.e1.grid(row= 10, column=1)
         
         self.err_msg = ttk.Label(frame1, font = ("Times New Roman", 10), foreground='red')
         
@@ -323,9 +454,18 @@ class make_gui():
                 font = ("Times New Roman", 10), background=bg_color)
         self.l3.grid(row = 30, column = 0,  padx = 0, pady = 5)
         
-        self.e2 = ttk.Entry(frame1, width = 30, foreground='black')
-        self.e2.insert(10, '8')
-        self.e2.grid(row=30, column=1)
+        Byte_list = [7,8]
+        Byte_list = tuple(Byte_list)
+        n2 = tk.StringVar() 
+        self.e2 = ttk.Combobox(frame1, width = 27, textvariable = n2, foreground='Grey', state='readonly')
+        self.e2.set('Select Byte Size')
+        self.e2['values'] = Byte_list
+        self.e2.bind("<FocusIn>", defocus)
+        self.e2.current(1)
+        self.e2.grid(row = 30, column = 1) 
+#        self.e2 = ttk.Entry(frame1, width = 30, foreground='black')
+#        self.e2.insert(10, '8')
+#        self.e2.grid(row=30, column=1)
         
         self.l4 = ttk.Label(frame1, text = "Bytes Transfered :",
                 font = ("Times New Roman", 10), background=bg_color)
@@ -371,7 +511,78 @@ class make_gui():
                                                                       self.Port_name, self.e1, self.e2, self.text, 'data_rate'),
                             background="light sea green", width=10)
         self.b8.grid(row=42, column=1, pady=10)
+        ###################################################################################
+        frame_test = Frame(master, width=550, bd=5, relief=RIDGE, height=180, bg='light Blue')
+        frame_test.grid(row=2, column=0, sticky=S, columnspan=4, padx=10, pady=22)
+        frame_test.grid_propagate(False)
+        self.l_test = ttk.Label(frame_test, text = "AVA DAC ( 1 ) :", 
+                font = ("Times New Roman", 10), background=bg_color)
+        self.l_test.grid(row = 10, column = 0,  padx = 10, pady = 5) 
+        self.e_test = ttk.Entry(frame_test, width = 18, foreground='black')
+        self.e_test.insert(10, 20000)
+        self.e_test.grid(row=10, column=1)
         
+        self.b_test = tk.Button(frame_test, text='Submit', command=partial(go_to_test , self.e_test, 1),
+                            background="green", width=10)
+        self.b_test.grid(row=10, column=2, pady=10, padx=10)
+        ################################################################################################
+        self.e_test1 = ttk.Entry(frame_test, width = 10, foreground='black')
+        self.e_test1.insert(10, 1000)
+        self.e_test1.grid(row=10, column=5)
+        
+        self.b1_test = tk.Button(frame_test, text='Up', command=partial(up_down , self.e_test, 11, self.b_test, self.e_test1),
+                            background="yellow", width=5, fg="red")
+        self.b1_test.grid(row=10, column=3, pady=10, padx=10)
+        self.b2_test = tk.Button(frame_test, text='Down', command=partial(up_down , self.e_test, 12, self.b_test, self.e_test1),
+                            background="yellow", width=5, fg="red")
+        self.b2_test.grid(row=10, column=4, pady=10, padx=10)
+        
+        #######################################################################################
+        self.l_test = ttk.Label(frame_test, text = "APS DAC   ( 2 ) :", 
+                font = ("Times New Roman", 10), background=bg_color)
+        self.l_test.grid(row = 20, column = 0,  padx = 10, pady = 5) 
+        self.e_test = ttk.Entry(frame_test, width = 18, foreground='black')
+        self.e_test.insert(10, 20000)
+        self.e_test.grid(row=20, column=1)
+        
+        self.b_test = tk.Button(frame_test, text='Submit', command=partial(go_to_test , self.e_test, 2),
+                            background="green", width=10)
+        self.b_test.grid(row=20, column=2, pady=10, padx=10)
+        ################################################################################################
+        self.e_test1 = ttk.Entry(frame_test, width = 10, foreground='black')
+        self.e_test1.insert(10, 1000)
+        self.e_test1.grid(row=20, column=5)
+        
+        self.b1_test = tk.Button(frame_test, text='Up', command=partial(up_down , self.e_test, 11, self.b_test, self.e_test1),
+                            background="yellow", width=5, fg="red")
+        self.b1_test.grid(row=20, column=3, pady=10, padx=10)
+        self.b2_test = tk.Button(frame_test, text='Down', command=partial(up_down , self.e_test, 12, self.b_test, self.e_test1),
+                            background="yellow", width=5, fg="red")
+        self.b2_test.grid(row=20, column=4, pady=10, padx=10)
+        #######################################################################################
+        ########################################################################################
+        self.l_test = ttk.Label(frame_test, text = "DPS LE      ( 3 ) :", 
+                font = ("Times New Roman", 10), background=bg_color)
+        self.l_test.grid(row = 30, column = 0,  padx = 10, pady = 5) 
+        self.e_test = ttk.Entry(frame_test, width = 18, foreground='black')
+        self.e_test.insert(10, 30)
+        self.e_test.grid(row=30, column=1)
+        
+        self.b_test = tk.Button(frame_test, text='Submit', command=partial(go_to_test , self.e_test, 3),
+                            background="green", width=10)
+        self.b_test.grid(row=30, column=2, pady=10, padx=10)
+        ################################################################################################
+        self.e_test1 = ttk.Entry(frame_test, width = 10, foreground='black')
+        self.e_test1.insert(10, 1)
+        self.e_test1.grid(row=30, column=5)
+        
+        self.b1_test = tk.Button(frame_test, text='Up', command=partial(up_down , self.e_test, 11, self.b_test, self.e_test1),
+                            background="yellow", width=5, fg="red")
+        self.b1_test.grid(row=30, column=3, pady=10, padx=10)
+        self.b2_test = tk.Button(frame_test, text='Down', command=partial(up_down , self.e_test, 12, self.b_test, self.e_test1),
+                            background="yellow", width=5, fg="red")
+        self.b2_test.grid(row=30, column=4, pady=10, padx=10)
+        #######################################################################################
         #####################################################################
         
         
